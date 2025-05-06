@@ -10,7 +10,7 @@ import itertools
 st.set_page_config(page_title="Diversity Analysis Tool", layout="centered")
 st.title("Alpha & Beta Diversity P-Value Calculator")
 
-analysis_type = st.selectbox("Select Analysis Type", ['Alpha Diversity (Shannon & Observed Features)', "Beta Diversity (PERMANOVA/ANOSIM)"])
+analysis_type = st.selectbox("Select Analysis Type", ['Alpha Diversity (Shannon & Observed Features & Simpsom)', "Beta Diversity (PERMANOVA/ANOSIM)"])
 
 if analysis_type == "Beta Diversity (PERMANOVA/ANOSIM)":
     sample_sheet = st.file_uploader("Upload Sample Sheet (.csv)", type=["csv"])
