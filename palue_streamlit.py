@@ -77,7 +77,7 @@ if analysis_type == "Beta Diversity (PERMANOVA/ANOSIM)":
             result = anosim(bc_dm, grouping=groups, permutations=permutations)
             st.success(f"ANOSIM R = {result['test statistic']:.4f}, p-value = {result['p-value']:.4f}")
 
-elif analysis_type == "Alpha Diversity (Shannon & Observed Features)":
+elif analysis_type == "Alpha Diversity (Shannon & Observed Features & Simpsom)":
     alpha_file = st.file_uploader("Upload Alpha Diversity CSV", type="csv")
 
     if alpha_file:
