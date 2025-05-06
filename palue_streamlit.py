@@ -10,7 +10,7 @@ import itertools
 st.set_page_config(page_title="Diversity Analysis Tool", layout="centered")
 st.title("Alpha & Beta Diversity P-Value Calculator")
 
-analysis_type = st.selectbox("Select Analysis Type", ["Beta Diversity (PERMANOVA/ANOSIM)", "Alpha Diversity (Shannon & Observed Features)"])
+analysis_type = st.selectbox("Select Analysis Type", ['Alpha Diversity (Shannon & Observed Features)', "Beta Diversity (PERMANOVA/ANOSIM)"])
 
 if analysis_type == "Beta Diversity (PERMANOVA/ANOSIM)":
     sample_sheet = st.file_uploader("Upload Sample Sheet (.csv)", type=["csv"])
@@ -98,12 +98,16 @@ elif analysis_type == "Alpha Diversity (Shannon & Observed Features)":
                 obs2 = alpha_df[alpha_df[group_col] == g2]["observed_features"]
                 shan1 = alpha_df[alpha_df[group_col] == g1]["shannon_entropy"]
                 shan2 = alpha_df[alpha_df[group_col] == g2]["shannon_entropy"]
+                sip1 = alpha_df[alpha_df[group_col] == g1]["simpson"]
+                sip2 = alpha_df[alpha_df[group_col] == g2]["simpson"]
 
                 p_obs = mannwhitneyu(obs1, obs2).pvalue
                 p_shan = mannwhitneyu(shan1, shan2).pvalue
+                p_sip = mannwhitneyu(sip1, sip2).pvalue
 
                 st.markdown(f"**{g1} vs {g2}**")
                 st.markdown(f"- Observed Features p-value: `{p_obs:.4f}`")
                 st.markdown(f"- Shannon Entropy p-value: `{p_shan:.4f}`")
+                st.markdown(f'- Simpson p-value: `{p_sip:.4f}`')
         else:
             st.warning("At least 2 groups required for comparison.")
