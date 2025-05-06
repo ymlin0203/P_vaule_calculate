@@ -1,52 +1,109 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
+from scipy.spatial.distance import squareform
 from skbio import DistanceMatrix
 from skbio.stats.distance import anosim
+from scipy.stats import mannwhitneyu
+import itertools
 
-st.title("🔬 ANOSIM 分析工具：自動依 metadata 分組")
+st.set_page_config(page_title="Diversity Analysis Tool", layout="centered")
+st.title("Alpha & Beta Diversity P-Value Calculator")
 
-st.markdown("請依序上傳：")
-uploaded_bc = st.file_uploader("📂 上傳 Bray-Curtis 距離矩陣（.tsv）", type=["tsv"])
-uploaded_meta = st.file_uploader("📂 上傳 Metadata 表（需包含 'Sample' 與 'Group' 欄位）", type=["csv"])
+analysis_type = st.selectbox("Select Analysis Type", ["Beta Diversity (PERMANOVA/ANOSIM)", "Alpha Diversity (Shannon & Observed Features)"])
 
-if uploaded_bc is not None and uploaded_meta is not None:
-    np.random.seed(42)
+if analysis_type == "Beta Diversity (PERMANOVA/ANOSIM)":
+    sample_sheet = st.file_uploader("Upload Sample Sheet (.csv)", type=["csv"])
+    braycurtis_file = st.file_uploader("Upload Bray-Curtis Distance Matrix (.tsv)", type=["tsv"])
 
-    # 讀入資料
-    braycurtis_df = pd.read_csv(uploaded_bc, sep="\t", index_col=0)
-    metadata_df = pd.read_csv(uploaded_meta)
-    metadata_df.columns = metadata_df.columns.str.strip()
+    method = st.radio("Select Beta Diversity Method:", ["PERMANOVA", "ANOSIM"])
 
-    st.subheader("✅ 分組資訊統計")
-    st.write(metadata_df["Group"].value_counts())
+    with st.expander("⚙️ Advanced Settings"):
+        sample_col = st.text_input("Sample Column Name", value="Sample")
+        group_col = st.text_input("Group Column Name", value="Group")
+        permutations = st.slider("Number of Permutations", min_value=100, max_value=9999, value=999, step=100)
+        random_seed = st.number_input("Random Seed (Set 0 for no fixed seed)", value=42)
 
-    # 提取樣本與分組
-    samples = metadata_df["Sample"].values
-    grouping = metadata_df["Group"].values
+    if sample_sheet and braycurtis_file:
+        if random_seed != 0:
+            np.random.seed(int(random_seed))
 
-    try:
-        filtered_df = braycurtis_df.loc[samples, samples]
-        bc_dm = DistanceMatrix(filtered_df.values, ids=samples)
+        metadata_df = pd.read_csv(sample_sheet)
+        metadata_df.columns = metadata_df.columns.str.strip()
+        bc_df = pd.read_csv(braycurtis_file, sep="\t", index_col=0)
 
-        # 執行 ANOSIM
-        result = anosim(distance_matrix=bc_dm, grouping=grouping, permutations=999)
+        samples = metadata_df[sample_col].values
+        groups = metadata_df[group_col].values
 
-        st.subheader("📊 ANOSIM 結果")
-        st.write(result)
+        st.subheader("Detected Groups")
+        group_counts = metadata_df[group_col].value_counts()
+        for grp, count in group_counts.items():
+            st.markdown(f"- **{grp}**: {count} samples")
 
-        # 匯出結果
-        result_df = pd.DataFrame([{
-            "Comparison": "Auto-grouped from Metadata",
-            "R": round(result['test statistic'], 4),
-            "p-value": round(result['p-value'], 6),
-            "Permutations": 999,
-            "Seed": 42
-        }])
-        st.download_button("📥 下載結果 CSV", result_df.to_csv(index=False), file_name="anosim_metadata_grouping.csv")
+        bc_filtered = bc_df.loc[samples, samples]
 
-    except Exception as e:
-        st.error(f"資料處理時發生錯誤：{e}")
-else:
-    st.info("請同時上傳距離矩陣與 metadata 檔案以執行分析")
+        if method == "PERMANOVA":
+            dist_array = squareform(bc_filtered.values)
+
+            def get_group_dists(labels, dists):
+                n = len(labels)
+                within, between = [], []
+                k = 0
+                for i in range(n):
+                    for j in range(i+1, n):
+                        if labels[i] == labels[j]:
+                            within.append(dists[k])
+                        else:
+                            between.append(dists[k])
+                        k += 1
+                return np.array(within), np.array(between)
+
+            obs_w, obs_b = get_group_dists(groups, dist_array)
+            obs_F = (np.mean(obs_b) - np.mean(obs_w)) / np.mean(obs_w)
+
+            perm_F = []
+            for _ in range(permutations):
+                perm = np.random.permutation(groups)
+                w, b = get_group_dists(perm, dist_array)
+                if len(w) == 0 or len(b) == 0:
+                    continue
+                perm_F.append((np.mean(b) - np.mean(w)) / np.mean(w))
+
+            p_value = np.mean(np.array(perm_F) >= obs_F)
+            st.success(f"PERMANOVA pseudo-F = {obs_F:.4f}, p-value = {p_value:.4f}")
+
+        elif method == "ANOSIM":
+            bc_dm = DistanceMatrix(bc_filtered.values, ids=samples)
+            result = anosim(bc_dm, grouping=groups, permutations=permutations)
+            st.success(f"ANOSIM R = {result['test statistic']:.4f}, p-value = {result['p-value']:.4f}")
+
+elif analysis_type == "Alpha Diversity (Shannon & Observed Features)":
+    alpha_file = st.file_uploader("Upload Alpha Diversity CSV", type="csv")
+
+    if alpha_file:
+        alpha_df = pd.read_csv(alpha_file)
+        alpha_df.columns = alpha_df.columns.str.strip()
+
+        group_col = "Group"
+        st.subheader("Detected Groups")
+        group_counts = alpha_df[group_col].value_counts()
+        for grp, count in group_counts.items():
+            st.markdown(f"- **{grp}**: {count} samples")
+
+        group_values = alpha_df[group_col].unique()
+        if len(group_values) >= 2:
+            st.subheader("Pairwise Mann-Whitney U Test Results")
+            for g1, g2 in itertools.combinations(group_values, 2):
+                obs1 = alpha_df[alpha_df[group_col] == g1]["observed_features"]
+                obs2 = alpha_df[alpha_df[group_col] == g2]["observed_features"]
+                shan1 = alpha_df[alpha_df[group_col] == g1]["shannon_entropy"]
+                shan2 = alpha_df[alpha_df[group_col] == g2]["shannon_entropy"]
+
+                p_obs = mannwhitneyu(obs1, obs2).pvalue
+                p_shan = mannwhitneyu(shan1, shan2).pvalue
+
+                st.markdown(f"**{g1} vs {g2}**")
+                st.markdown(f"- Observed Features p-value: `{p_obs:.4f}`")
+                st.markdown(f"- Shannon Entropy p-value: `{p_shan:.4f}`")
+        else:
+            st.warning("At least 2 groups required for comparison.")
